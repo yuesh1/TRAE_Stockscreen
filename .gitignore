@@ -1,0 +1,16 @@
+# PlatformIO 编译产物
+.pio/
+
+# 本机 WiFi 凭据（不随仓库上传）
+include/wifi.local.h
+
+# IDE
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
