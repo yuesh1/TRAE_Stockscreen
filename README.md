@@ -121,6 +121,31 @@ wifi 你的WiFi名 你的WiFi密码
 凭据优先级：**NVS（串口配置）> include/wifi.local.h（编译期）**。
 自己编译的用户可以继续用 `wifi.local.h`，也可以烧录后直接用串口配置。
 
+### 自定义自选股
+
+自选股清单目前是**编译期配置**，下载社区固件的用户暂不能直接修改（WiFi 可通过
+串口配网，但股票清单与中文字库要重新编译）。想换监控的股票：
+
+1. clone 仓库，用 VS Code + PlatformIO 打开
+2. 只改 `include/config.h`：
+
+```c
+static const char* WATCHLIST[] = {"600519", "002594"};      // 自选股代码（6xx→上海，0xx/3xx→深圳）
+static const char* WATCH_NAMES[] = {"贵州茅台", "比亚迪"};   // 与代码一一对应
+
+#define CN_CHARSET "交易中断网失败休市配请用串口贵州茅台比亚迪"  // 名称用到的字 + UI 提示字
+```
+
+3. 重新生成字库并烧录：
+
+```bash
+python3 tools/gen_font.py     # 生成 include/stock_font.h
+pio run -t upload             # 板子 USB 直连
+```
+
+> 提示：将来如需"下载即自定义自选股"，可在 USB 串口增加 `watch` 命令 +
+> 全量 GB2312 字库 + 腾讯源 GBK 名称解码。当前为保持固件精简，字库只打包用到的字。
+
 ### 3. 编译烧录
 
 ```bash
@@ -306,6 +331,7 @@ stockscreen/
 ## 已知限制
 
 - 东财主源在 core 3.0.7（C3）上因 mbedTLS bug 不可用，当前固定走腾讯源（升级 core 可解）
+- 自选股与中文名称是编译期配置：下载社区固件的用户需按[自定义自选股](#自定义自选股)自行编译修改
 - 字库容量：`CN_CHARSET` 每个字约 32 字节 flash，只放用到的字
 - 时钟精度依赖 WiFi 抓取频率，断网时走本地 millis 漂移
 - 行情为公开数据接口，未做鉴权；`setInsecure()` 跳过证书校验（个人设备 + 公开数据的取舍，代码内有注释）
