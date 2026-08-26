@@ -29,7 +29,7 @@ static const char* WATCH_NAMES[] = {"上汽集团", "宗申动力", "中国西�
 // 把自选股中文名称里出现的字都写进来；改了之后运行：
 //   python3 tools/gen_font.py
 // 重新生成 include/stock_font.h
-#define CN_CHARSET "上汽集团宗申动力中国西电交易中断网失败休市股票"
+#define CN_CHARSET "上汽集团宗申动力中国西电交易中断网失败休市股票请用串口配"
 
 // ---------- I2C（电池电量计 CW2017，与音频 codec 共用总线） ----------
 #define BSP_I2C_SDA 10

@@ -11,9 +11,12 @@
 #include "stocks.h"
 #include "ui.h"
 #include "battery.h"
+#include "wificonfig.h"
 
 static TFT_eSPI tft;
 static Quote quotes[WATCHLIST_COUNT];
+
+static bool gNeedConfig = false;  // 编译期占位符且 NVS 无凭据：需要串口配网
 
 static bool     haveData   = false;   // 是否已成功拿到过数据
 static bool     lastFetchOk= false;
@@ -32,16 +35,19 @@ static uint32_t nowEpoch() {
 }
 
 static void connectWiFi() {
-  log_i("[WiFi] 连接 %s ...", WIFI_SSID);
+  String ssid, pass;
+  wifiConfigResolve(ssid, pass);   // NVS 优先，否则编译期默认值
+  log_i("[WiFi] 连接 %s ...", ssid.c_str());
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  WiFi.begin(ssid.c_str(), pass.c_str());
   uint32_t t0 = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) {
     delay(200);
     yield();
   }
-  log_i("%s", WiFi.status() == WL_CONNECTED ? "[WiFi] 已连接" : "[WiFi] 连接失败，将自动重试");
+  if (WiFi.status() == WL_CONNECTED) log_i("[WiFi] 已连接");
+  else log_i("[WiFi] 连接失败（USB 串口输入 wifi <SSID> <密码> 可重新配置）");
 }
 
 static void doFetch() {
@@ -65,7 +71,7 @@ static void doFetch() {
     }
   }
   uiRender(tft, quotes, WATCHLIST_COUNT,
-           WiFi.status() == WL_CONNECTED, okF, haveData, lastTs, gBattSoc);
+           WiFi.status() == WL_CONNECTED, okF, haveData, lastTs, gBattSoc, gNeedConfig);
 }
 
 void setup() {
@@ -83,6 +89,11 @@ void setup() {
   uiShowBoot(tft, "A-SHARE TICKER", "ESP32-C3");
 
   batteryInit();
+  wifiConfigBegin();
+  gNeedConfig = wifiConfigIsPlaceholder() && !wifiConfigHaveCreds();
+  if (gNeedConfig) {
+    log_i("[配网] 未配置 WiFi：USB 串口输入 wifi <SSID> <密码>，help 查看帮助");
+  }
   connectWiFi();
   lastFetchMs = millis() - REFRESH_TRADING_MS;   // 启动后立刻抓一次
 }
@@ -91,7 +102,16 @@ void loop() {
   uint32_t now = millis();
   bool wifiOk = WiFi.status() == WL_CONNECTED;
 
-  if (!wifiOk && now - lastFetchMs > 10000) {
+  // 串口配网：凭据变更后立即重连
+  if (wifiConfigLoop()) {
+    gNeedConfig = wifiConfigIsPlaceholder() && !wifiConfigHaveCreds();
+    WiFi.disconnect();
+    lastFetchMs = 0;
+    connectWiFi();
+  }
+
+  // 未配置时不做无谓的自动重连（占位符连不上，等用户串口配网）
+  if (!wifiOk && !gNeedConfig && now - lastFetchMs > 10000) {
     lastFetchMs = now;
     log_i("[WiFi] 断线，重连...");
     WiFi.disconnect();

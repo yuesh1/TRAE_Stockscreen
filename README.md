@@ -57,6 +57,8 @@
 - **免 NTP 时钟**：用 HTTP 响应头 `Date` 字段校准北京时间（详见[时间体系](#时间体系)）
 - **交易时段自适应刷新**：交易时段 4s / 休市 60s，按服务器时间判断，无需 RTC
 - **WiFi 断线自动重连**，行情失败保留上一帧数据并显示"更新失败"
+- **USB 串口配网**：下载社区固件无需改代码重编译，USB 连接后串口（115200）输入
+  `wifi <SSID> <密码>` 即配即用，凭据存入 NVS 断电不丢（详见[配网](#配网)）
 - **电量百分比显示**（CW2017），<20% 红色预警
 - **中文字库按需生成**：只打包自选股名称用到的字（16×16 点阵）
 
@@ -92,6 +94,32 @@ static const char* WATCH_NAMES[] = {"上汽集团", "宗申动力", "中国西�
 ```bash
 python3 tools/gen_font.py     # 从 macOS 系统 CJK 字体提取字形 → include/stock_font.h
 ```
+
+### 配网
+
+**直接烧录社区固件的用户**（无需改代码重编译）：
+
+1. USB 连接设备，打开串口监视器 115200
+   （PlatformIO 自带，或任意终端：`screen /dev/cu.usbmodem* 115200`）
+2. 输入并回车：
+
+```
+wifi 你的WiFi名 你的WiFi密码
+```
+
+3. 设备自动保存（NVS，断电不丢）并重连；连不上 WiFi 时屏幕也会显示配网提示
+
+常用命令：
+
+| 命令 | 作用 |
+|---|---|
+| `wifi <SSID> <密码>` | 保存凭据并立即重连 |
+| `wifi-status` | 查看当前凭据来源（不显示密码） |
+| `wifi-clear` | 清除 NVS 凭据，回退编译期默认值 |
+| `help` | 打印帮助 |
+
+凭据优先级：**NVS（串口配置）> include/wifi.local.h（编译期）**。
+自己编译的用户可以继续用 `wifi.local.h`，也可以烧录后直接用串口配置。
 
 ### 3. 编译烧录
 
@@ -267,6 +295,7 @@ stockscreen/
 │   ├── stocks.h / stocks.cpp   # 行情抓取与解析（东财/腾讯）、HTTP、时间工具
 │   ├── ui.h / ui.cpp           # 屏幕渲染：状态栏 + 卡片 + 中文绘制
 │   ├── battery.h / battery.cpp # CW2017 电量计驱动
+│   ├── wificonfig.h / wificonfig.cpp # USB 串口配网：NVS 存储 + 串口命令
 │   └── test_screen.cpp         # 屏幕诊断固件（env:test_screen）
 ├── lib/
 │   └── TFT_eSPI/               # 本地修改版（C3 兼容补丁，见 README_PATCHES.md）

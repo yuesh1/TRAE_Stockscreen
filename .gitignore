@@ -4,6 +4,9 @@
 # 本机 WiFi 凭据（不随仓库上传）
 include/wifi.local.h
 
+# 发布产物（固件镜像与封面，本地生成，不进源码仓库）
+release/
+
 # IDE
 .vscode/
 .idea/

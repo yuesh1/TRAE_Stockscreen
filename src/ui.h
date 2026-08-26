@@ -6,9 +6,11 @@
 // 启动/等待画面
 void uiShowBoot(TFT_eSPI& tft, const char* line1, const char* line2);
 
-// 全屏渲染（每次抓取后调用）；battery 为电量 0..100，<0 表示不显示
+// 全屏渲染（每次抓取后调用）；battery 为电量 0..100，<0 表示不显示；
+// needConfig 为 true 时显示 USB 串口配网提示
 void uiRender(TFT_eSPI& tft, const Quote* quotes, size_t count,
-              bool wifiOk, bool fetchOk, bool haveData, uint32_t ts, int battery);
+              bool wifiOk, bool fetchOk, bool haveData, uint32_t ts, int battery,
+              bool needConfig = false);
 
 // 局部刷新头部时钟与底部状态（每秒调用）
 void uiRenderClock(TFT_eSPI& tft, uint32_t nowEpoch, int battery);

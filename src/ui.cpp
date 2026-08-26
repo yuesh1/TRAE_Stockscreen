@@ -21,6 +21,7 @@ static uint32_t g_ts      = 0;
 static bool     g_wifiOk  = false;
 static bool     g_fetchOk = false;
 static bool     g_have    = false;
+static bool     g_needCfg = false;   // 需要 USB 串口配网
 
 static uint16_t dirColor(float v) {
   if (v > 0.001f) return C_UP;
@@ -85,7 +86,8 @@ static void drawFooter(TFT_eSPI& tft, uint32_t nowEpoch) {
 
   // 右：状态标签（中文）
   const char* tag; uint16_t tagColor;
-  if (!g_wifiOk)      { tag = "断网";  tagColor = C_WARN; }
+  if (g_needCfg)      { tag = "配网";  tagColor = C_WARN; }
+  else if (!g_wifiOk) { tag = "断网";  tagColor = C_WARN; }
   else if (!g_have)   { tag = "失败";  tagColor = C_WARN; }
   else if (!isTradingTime(nowEpoch)) { tag = "休市"; tagColor = C_GREY; }
   else                { tag = "交易中"; tagColor = C_UP; }
@@ -165,14 +167,29 @@ void uiShowBoot(TFT_eSPI& tft, const char* line1, const char* line2) {
 }
 
 void uiRender(TFT_eSPI& tft, const Quote* quotes, size_t count,
-              bool wifiOk, bool fetchOk, bool haveData, uint32_t ts, int battery) {
+              bool wifiOk, bool fetchOk, bool haveData, uint32_t ts, int battery,
+              bool needConfig) {
   g_ts = ts; g_wifiOk = wifiOk; g_fetchOk = fetchOk; g_have = haveData;
+  g_needCfg = needConfig;
 
   tft.fillScreen(C_BG);
   drawHeader(tft, g_ts, battery);
 
   if (!haveData && !fetchOk) {
-    uiShowBoot(tft, "NO DATA", wifiOk ? "waiting..." : "WIFI OFFLINE");
+    if (g_needCfg) {
+      // 配网提示：请用USB串口配网（字库含 请/用/串/口/配/网）
+      // 整行 9 字符 × 16px = 144px，起始 x=48 居中
+      tft.setTextColor(TFT_WHITE, C_BG);
+      tft.drawString("A-SHARE TICKER", (240 - 13 * 16) / 2, 96, 2);
+      drawCN(tft, 48, 130, "请用", TFT_WHITE, 4);
+      tft.drawString("USB", 48 + 2 * 16, 130, 2);
+      drawCN(tft, 48 + 5 * 16, 130, "串口配网", TFT_WHITE, 8);
+      tft.setTextColor(C_GREY, C_BG);
+      tft.drawString("wifi <SSID> <PASS>", (240 - 18 * 8) / 2, 164, 1);
+      tft.drawString("baud 115200", (240 - 11 * 8) / 2, 186, 1);
+    } else {
+      uiShowBoot(tft, "NO DATA", wifiOk ? "waiting..." : "WIFI OFFLINE");
+    }
     return;
   }
 
