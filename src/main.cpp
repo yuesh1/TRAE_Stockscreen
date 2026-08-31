@@ -28,10 +28,41 @@ static uint32_t lastClockMs= 0;
 static int      gBattSoc   = -1;   // 电量 0..100，-1 = 电量计不在位
 static uint32_t lastBattMs = 0;
 
+static bool     screenOn      = true;
+static uint32_t lastActivityMs= 0;
+static uint32_t lastButtonMs  = 0;
+
 // 屏幕时钟：服务器时间 + 本地经过时间（秒级足够）
 static uint32_t nowEpoch() {
   if (!haveData || !lastTs) return 0;
   return lastTs + (millis() - fetchAtMs) / 1000;
+}
+
+static bool isKeyPressed() {
+#if BTN_ADC_PIN >= 0
+  return analogReadMilliVolts(BTN_ADC_PIN) < BTN_PRESS_MV;
+#else
+  return false;
+#endif
+}
+
+static void setScreenOn(bool on) {
+#if TFT_BL_PIN >= 0
+  digitalWrite(TFT_BL_PIN, on ? HIGH : LOW);
+  screenOn = on;
+#else
+  // 没有可控背光时保持渲染，避免逻辑息屏后无法唤醒画面。
+  screenOn = true;
+#endif
+}
+
+static void renderScreen() {
+  if (!screenOn) return;
+  uiRender(tft, quotes, WATCHLIST_COUNT,
+           WiFi.status() == WL_CONNECTED, lastFetchOk, haveData,
+           lastTs, gBattSoc, gNeedConfig);
+  // 全屏渲染保留 lastTs 作为行情更新时间；头部时钟单独显示当前推算时间。
+  uiRenderClock(tft, nowEpoch(), gBattSoc);
 }
 
 static void connectWiFi() {
@@ -70,8 +101,7 @@ static void doFetch() {
       lastTs = maxTs;
     }
   }
-  uiRender(tft, quotes, WATCHLIST_COUNT,
-           WiFi.status() == WL_CONNECTED, okF, haveData, lastTs, gBattSoc, gNeedConfig);
+  renderScreen();
 }
 
 void setup() {
@@ -81,7 +111,11 @@ void setup() {
 
 #if TFT_BL_PIN >= 0
   pinMode(TFT_BL_PIN, OUTPUT);
-  digitalWrite(TFT_BL_PIN, HIGH);
+  setScreenOn(true);
+#endif
+#if BTN_ADC_PIN >= 0
+  analogReadResolution(12);
+  analogSetPinAttenuation(BTN_ADC_PIN, ADC_11db);
 #endif
   tft.init();
   tft.setRotation(0);       // 画面上下颠倒/镜像时改 1/2/3
@@ -96,11 +130,33 @@ void setup() {
   }
   connectWiFi();
   lastFetchMs = millis() - REFRESH_TRADING_MS;   // 启动后立刻抓一次
+  lastActivityMs = millis();
 }
 
 void loop() {
   uint32_t now = millis();
   bool wifiOk = WiFi.status() == WL_CONNECTED;
+
+  // 三键共用 GPIO0 ADC 分压；任意键按下都算一次屏幕操作。
+  if (now - lastButtonMs >= 100) {
+    lastButtonMs = now;
+    if (isKeyPressed()) {
+      lastActivityMs = now;
+      if (!screenOn) {
+        setScreenOn(true);
+        renderScreen();   // 先显示息屏期间缓存的数据，不等待网络请求
+        lastClockMs = now;
+        log_i("[息屏] 按键唤醒");
+      }
+    }
+  }
+
+#if TFT_BL_PIN >= 0
+  if (screenOn && now - lastActivityMs >= SCREEN_TIMEOUT_MS) {
+    setScreenOn(false);
+    log_i("[息屏] %lus 无操作，关闭背光", (unsigned long)SCREEN_TIMEOUT_MS / 1000);
+  }
+#endif
 
   // 串口配网：凭据变更后立即重连
   if (wifiConfigLoop()) {
@@ -139,8 +195,8 @@ void loop() {
     }
   }
 
-  // 每秒局部刷新时钟与状态标签
-  if (now - lastClockMs >= 1000) {
+  // 每秒局部刷新时钟与状态标签；息屏时行情抓取、电量采样仍继续
+  if (screenOn && now - lastClockMs >= 1000) {
     lastClockMs = now;
     uiRenderClock(tft, nowEpoch(), gBattSoc);
   }

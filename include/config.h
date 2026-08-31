@@ -45,6 +45,12 @@ static const char* WATCH_NAMES[] = {"兆易创新", "大族激光", "富国通�
 #define TFT_RST  -1   // 官方板复位脚硬接 3.3V，不接 MCU
 #define TFT_BL_PIN 21 // 背光控制引脚，没有则填 -1（常亮）
 
+// ---------- 按键与自动息屏 ----------
+// TRAE AI 通行证三键共用 GPIO0 ADC 分压：松开约 3300mV，任意键按下 < 1900mV
+#define BTN_ADC_PIN        0
+#define BTN_PRESS_MV       1900
+#define SCREEN_TIMEOUT_MS  20000
+
 // ---------- 刷新频率 ----------
 #define REFRESH_TRADING_MS 4000    // 交易时段刷新间隔
 #define REFRESH_IDLE_MS    60000   // 非交易时段（休市）刷新间隔
