@@ -14,6 +14,7 @@
 #include "driver/usb_serial_jtag.h"
 
 static const char* NVS_NS = "wifi";
+static bool usbSerialReady = false;
 
 static const char* USAGE =
   "\r\n=== WiFi 配置 ===\r\n"
@@ -25,6 +26,7 @@ static const char* USAGE =
 // ---- 控制台输出 / 输入（USB-Serial/JTAG 驱动）----
 
 static void cfgWrite(const char* s) {
+  if (!usbSerialReady) return;
   usb_serial_jtag_write_bytes(s, strlen(s), pdMS_TO_TICKS(200));
 }
 
@@ -39,6 +41,7 @@ static void cfgPrintf(const char* fmt, ...) {
 
 // 返回读到的字节，无数据返回 -1
 static int cfgReadByte() {
+  if (!usbSerialReady) return -1;
   uint8_t b;
   int n = usb_serial_jtag_read_bytes(&b, 1, 0);
   return n > 0 ? b : -1;
@@ -91,6 +94,15 @@ static void clearNvs() {
 // ---- 命令处理 ----
 
 void wifiConfigBegin() {
+  usb_serial_jtag_driver_config_t config = {};
+  config.tx_buffer_size = 256;
+  config.rx_buffer_size = 256;
+  esp_err_t err = usb_serial_jtag_driver_install(&config);
+  if (err != ESP_OK) {
+    log_e("[WiFi] USB 串口配网不可用：%s", esp_err_to_name(err));
+    return;
+  }
+  usbSerialReady = true;
   cfgWrite("\r\n[WiFi] USB 串口配网已就绪（help 查看命令）\r\n");
 }
 
