@@ -25,6 +25,34 @@ static const char* WATCHLIST[] = {"603986", "002008", "159583"};
 static const char* WATCH_NAMES[] = {"兆易创新", "大族激光", "富国通信"};
 #define WATCH_NAMES_COUNT (sizeof(WATCH_NAMES) / sizeof(WATCH_NAMES[0]))
 
+// ---------- 加密货币页（UP/DOWN 键在 A股页与币市页之间切换）----------
+#define CRYPTO_ENABLE     1        // 0 = 关闭币市页
+#define CRYPTO_COUNT      5        // 显示市值排名前几的币（最多 5 只显示效果最好）
+#define CRYPTO_REFRESH_MS 45000    // 刷新间隔（CoinGecko 免费接口有频率限制，勿低于 30s）
+// 主源 CoinGecko：动态按市值降序取前几名（HTTPS）。
+// 大陆网络访问不到时可改成可用的镜像域名（路径需兼容 /api/v3）
+#define CRYPTO_CG_HOST  "api.coingecko.com"
+// 备用源 OKX：固定列表逐个查询（无市值数据）。大陆网络可改 "aws.okx.com"
+#define CRYPTO_OKX_HOST "www.okx.com"
+// 市值排名里跳过的稳定币/包装币（用户要看的是"流动"，这些不动）
+#define CRYPTO_EXCLUDE  {"USDT", "USDC", "STETH", "WBTC", "WETH", "WSTETH", "BSC-USD"}
+// CoinGecko 不可用时 OKX 备用固定列表（按当前市值排名手工维护）
+#define CRYPTO_FALLBACK_LIST {"BTC", "ETH", "XRP", "BNB", "SOL"}
+
+// ---------- 夜间深睡眠省电 ----------
+// 北京时间窗口内且已息屏、无 BLE 连接时进入深睡眠（<0.1mA），
+// RTC 定时睡到窗口结束自动唤醒；按任意实体键随时唤醒（唤醒=重启，需数秒联网）
+#define DEEP_SLEEP_ENABLE    1                  // 0 = 关闭
+#define DEEP_SLEEP_START_MIN (23 * 60 + 30)     // 23:30 开始
+#define DEEP_SLEEP_END_MIN   (7 * 60)           // 07:00 结束（可跨零点）
+
+// ---------- BLE 配网 / 行情推送 ----------
+// 手机装 nRF Connect / LightBlue，连接设备后：
+//   向特征 FFF1 写文本 "wifi <SSID> <密码>" 即可配网（与串口命令一致）
+//   订阅特征 FFF2 可收到命令回应和每轮行情推送
+#define BLE_ENABLE      1                  // 0 = 关闭（可省约 50KB 内存）
+#define BLE_DEVICE_NAME "StockScreen"      // 手机扫描到的设备名
+
 // ---------- 中文字库字符集（配合 tools/gen_font.py 使用）----------
 // 把自选股中文名称里出现的字都写进来；改了之后运行：
 //   python3 tools/gen_font.py
@@ -46,8 +74,12 @@ static const char* WATCH_NAMES[] = {"兆易创新", "大族激光", "富国通�
 #define TFT_BL_PIN 21 // 背光控制引脚，没有则填 -1（常亮）
 
 // ---------- 按键与自动息屏 ----------
-// TRAE AI 通行证三键共用 GPIO0 ADC 分压：松开约 3300mV，任意键按下 < 1900mV
+// TRAE AI 通行证三键共用 GPIO0 ADC 分压，电压窗口来自官方仓库 bsp_pins.h：
+//   UP 0~150mV / DOWN 150~447mV / OK 447~1900mV / 松开约 3300mV
+// UP/DOWN 切换页面（A股 ⇄ 币市），OK 立即刷新当前页，任意键唤醒屏幕
 #define BTN_ADC_PIN        0
+#define BTN_UP_MAX_MV      150
+#define BTN_DOWN_MAX_MV    447
 #define BTN_PRESS_MV       1900
 #define SCREEN_TIMEOUT_MS  20000
 

@@ -2,6 +2,10 @@
 #include "User_Setup.h"   // 必须先于 TFT_eSPI.h（USER_SETUP_LOADED 模式）
 #include <TFT_eSPI.h>
 #include "stocks.h"
+#include "crypto.h"
+
+// 页面：0 = A股自选，1 = 加密货币市值前五
+enum UiPage { UI_PAGE_STOCK = 0, UI_PAGE_CRYPTO = 1, UI_PAGE_COUNT = 2 };
 
 // 启动/等待画面
 void uiShowBoot(TFT_eSPI& tft, const char* line1, const char* line2);
@@ -11,6 +15,14 @@ void uiShowBoot(TFT_eSPI& tft, const char* line1, const char* line2);
 void uiRender(TFT_eSPI& tft, const Quote* quotes, size_t count,
               bool wifiOk, bool fetchOk, bool haveData, uint32_t ts, int battery,
               bool needConfig = false);
+
+// 加密货币页全屏渲染；ts 为该页数据的更新时间（epoch）
+void uiRenderCrypto(TFT_eSPI& tft, const CryptoQuote* coins, size_t count,
+                    bool wifiOk, bool fetchOk, bool haveData, uint32_t ts,
+                    int battery);
+
+// 设置当前页（影响局部刷新时底部状态的画法）
+void uiSetPage(UiPage page);
 
 // 局部刷新头部时钟与底部状态（每秒调用）
 void uiRenderClock(TFT_eSPI& tft, uint32_t nowEpoch, int battery);

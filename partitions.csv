@@ -1,0 +1,9 @@
+# TRAE AI 通行证官方分区布局（来自 folotoy/ai-passport 仓库 partitions.csv）
+# factory 3MB 容纳 BLE 协议栈；0x700000 起的 recovery 区不触碰，
+# 保证官方小程序恢复通道可用
+# Name,   Type, SubType, Offset,   Size,     Flags
+nvs,      data, nvs,     0x9000,   0x6000,
+phy_init, data, phy,     0xf000,   0x1000,
+factory,  app,  factory, 0x10000,  0x300000,
+cardid,   data, nvs,     0x356000, 0x4000,
+recovery, app,  test,    0x700000, 0x100000,

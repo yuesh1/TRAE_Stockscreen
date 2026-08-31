@@ -6,6 +6,7 @@
 // ============================================================
 #include "stocks.h"
 #include "config.h"
+#include "net_http.h"
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
@@ -23,29 +24,6 @@ static bool isDigits(const char* s, size_t n) {
   return true;
 }
 
-// 日历换算（Howard Hinnant civil-from-days 算法）
-static int32_t daysFromCivil(int y, unsigned m, unsigned d) {
-  y -= m <= 2;
-  int era = (y >= 0 ? y : y - 399) / 400;
-  unsigned yoe = y - era * 400;
-  unsigned doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
-  unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-  return era * 146097 + (int)doe - 719468;
-}
-
-static void civilFromDays(int32_t z, int& y, unsigned& m, unsigned& d) {
-  z += 719468;
-  int era = (z >= 0 ? z : z - 146096) / 146097;
-  unsigned doe = z - era * 146097;
-  unsigned yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-  y = (int)yoe + era * 400;
-  unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-  unsigned mp = (5 * doy + 2) / 153;
-  d = doy - (153 * mp + 2) / 5 + 1;
-  m = mp + (mp < 10 ? 3 : -9);
-  y += (m <= 2);
-}
-
 // "20260821161449"（北京时间）→ epoch
 static uint32_t parseYmdHms(const char* s) {
   int y, mo, d, h, mi, se;
@@ -54,77 +32,7 @@ static uint32_t parseYmdHms(const char* s) {
                     + h * 3600 + mi * 60 + se - 8 * 3600);
 }
 
-// ---------------- HTTP 响应头解析 ----------------
-
-// 在长度为 len 的响应头里找 name:（大小写不敏感，name 用小写传入），返回值的指针
-static const char* findHeader(const char* h, size_t len, const char* name) {
-  size_t nl = strlen(name);
-  for (const char* p = h; p + nl + 1 <= h + len; p++) {
-    if (p != h && p[-1] != '\n') continue;    // 只匹配行首
-    bool ok = true;
-    for (size_t k = 0; k < nl; k++)
-      if (tolower((unsigned char)p[k]) != name[k]) { ok = false; break; }
-    if (!ok) continue;
-    const char* v = p + nl;
-    while (v < h + len && (*v == ' ' || *v == '\t')) v++;
-    return v < h + len ? v : nullptr;
-  }
-  return nullptr;
-}
-
-// "Fri, 22 Aug 2026 08:14:53 GMT" → UTC epoch；解析失败返回 0
-static uint32_t parseHttpDate(const char* s) {
-  int d, h, mi, se, y;
-  char mon[4] = {0};
-  if (sscanf(s, "%*3s, %d %3s %d %d:%d:%d", &d, mon, &y, &h, &mi, &se) != 6) return 0;
-  unsigned m = 0;
-  for (unsigned i = 0; i < 12; i++)
-    if (!memcmp(mon, "JanFebMarAprMayJunJulAugSepOctNovDec" + i * 3, 3)) { m = i + 1; break; }
-  if (!m) return 0;
-  return (uint32_t)((int64_t)daysFromCivil(y, m, d) * 86400 + h * 3600 + mi * 60 + se);
-}
-
-// ---------------- HTTP ----------------
-
-// 通用 GET：整体读进 buf，返回 HTTP 状态码；网络失败返回 -1。
-// serverEpoch（可为 NULL）：HTTP 200 时把响应头 Date 解析成 UTC epoch 写入
-static int httpGet(WiFiClient& c, const char* host, uint16_t port, const char* path,
-                   const char* extraHdr, char* buf, size_t cap, uint32_t* serverEpoch) {
-  c.setTimeout(8000);
-  if (!c.connect(host, port)) return -1;
-  c.print(F("GET ")); c.print(path);
-  c.print(F(" HTTP/1.1\r\nHost: ")); c.print(host);
-  c.print(F("\r\nConnection: close\r\nUser-Agent: Mozilla/5.0\r\n"));
-  if (extraHdr) { c.print(extraHdr); c.print(F("\r\n")); }
-  c.print(F("\r\n"));
-
-  unsigned long t0 = millis();
-  size_t n = 0;
-  while (c.connected() || c.available()) {
-    if (n >= cap - 1) break;
-    int r = c.read((uint8_t*)buf + n, cap - 1 - n);
-    if (r > 0) n += r;
-    if (millis() - t0 > 9000) { log_i("[http] 读取超时"); break; }
-  }
-  c.stop();
-  buf[n] = 0;
-  if (strncmp(buf, "HTTP/", 5) != 0) return -1;
-  if (serverEpoch) {
-    *serverEpoch = 0;
-    char* hend = strstr(buf, "\r\n\r\n");     // 只在响应头里找，避免扫到 body
-    if (hend) {
-      const char* date = findHeader(buf, (size_t)(hend - buf), "date:");
-      if (date) *serverEpoch = parseHttpDate(date);
-    }
-  }
-  return atoi(buf + 9);
-}
-
-// buf 原地去掉响应头，指向 body
-static char* stripHeaders(char* buf) {
-  char* p = strstr(buf, "\r\n\r\n");
-  return p ? p + 4 : buf;
-}
+// HTTP 请求 / 响应头解析 / 日历换算已抽到 net_http.cpp（与 crypto.cpp 共用）
 
 // ---------------- 东财（主源） ----------------
 

@@ -1,7 +1,9 @@
-# A股行情屏（stockscreen）
+# A股 + 加密货币行情屏（stockscreen）
 
-在 **TRAE AI 通行证**（FoloToy 出品的 ESP32-C3 徽章设备）上运行的 A 股实时行情显示器：
-红涨绿跌、中文名称、交易时段自适应刷新、服务器时间免 NTP 校准、板载电量显示。
+在 **TRAE AI 通行证**（FoloToy 出品的 ESP32-C3 徽章设备）上运行的行情显示器：
+A 股自选 + 加密货币市值前五双页显示（UP/DOWN 键翻页）、红涨绿跌、中文名称、
+交易时段自适应刷新、服务器时间免 NTP 校准、夜间深睡眠省电、BLE/串口双通道配网、
+BLE 行情推送、板载电量显示。
 
 <div align="center">
 
@@ -55,11 +57,19 @@
 
 - **红涨绿跌**，A 股配色习惯；停牌/解析失败显示 `--`
 - **股票代码 + 中文名称**，双数据源，断网自动降级
+- **加密货币页**：动态跟踪市值前五大币（CoinGecko 主源 / OKX 备用），美元价 +
+  24h 涨跌幅 + 市值缩写，自动跳过稳定币；UP/DOWN 键在 A股页 ⇄ 币市页之间切换，
+  OK 键立即刷新当前页（详见[加密货币页](#加密货币页)）
 - **免 NTP 时钟**：用 HTTP 响应头 `Date` 字段校准北京时间（详见[时间体系](#时间体系)）
-- **交易时段自适应刷新**：交易时段 4s / 休市 60s，按服务器时间判断，无需 RTC
+- **交易时段自适应刷新**：交易时段 4s / 休市 60s，按服务器时间判断，无需 RTC；
+  币市页独立节奏（默认 45s，全天有效）
 - **WiFi 断线自动重连**，行情失败保留上一帧数据并显示"更新失败"
-- **USB 串口配网**：下载社区固件无需改代码重编译，USB 连接后串口（115200）输入
+- **USB 串口 + BLE 双通道配网**：串口（115200）或手机 BLE 写入
   `wifi <SSID> <密码>` 即配即用，凭据存入 NVS 断电不丢（详见[配网](#配网)）
+- **BLE 行情推送**：手机订阅通知特征后，每轮刷新自动收到全部股票与币种的
+  最新价和涨跌幅（详见 [BLE 配网与推送](#ble-配网与推送)）
+- **夜间深睡眠省电**：默认北京时间 23:30~07:00 息屏后进入深睡眠（微安级功耗），
+  定时自动唤醒，按任意实体键随时唤醒（详见[深睡眠](#夜间深睡眠)）
 - **电量百分比显示**（CW2017），<20% 红色预警
 - **20 秒自动息屏**：关闭背光但继续更新行情，按任意实体键立即显示缓存的最新数据
 - **中文字库按需生成**：只打包自选股名称用到的字（16×16 点阵）
@@ -120,8 +130,65 @@ wifi 你的WiFi名 你的WiFi密码
 | `wifi-clear` | 清除 NVS 凭据，回退编译期默认值 |
 | `help` | 打印帮助 |
 
-凭据优先级：**NVS（串口配置）> include/wifi.local.h（编译期）**。
-自己编译的用户可以继续用 `wifi.local.h`，也可以烧录后直接用串口配置。
+凭据优先级：**NVS（串口/BLE 配置）> include/wifi.local.h（编译期）**。
+自己编译的用户可以继续用 `wifi.local.h`，也可以烧录后直接用串口或 BLE 配置。
+
+### BLE 配网与推送
+
+没有电脑也能配网：手机安装通用 BLE 调试工具（iOS/Android 的 **nRF Connect** 或
+**LightBlue**），连接名为 `StockScreen` 的设备（名称可在 `config.h` 改）：
+
+| 特征 | UUID | 用法 |
+|---|---|---|
+| 命令（写） | `FFF1` | 以 UTF-8 文本写入命令，与串口命令完全一致：`wifi <SSID> <密码>`、`wifi-status`、`wifi-clear`、`help` |
+| 推送（通知） | `FFF2` | 订阅后接收命令回应；每轮行情刷新自动推送一份文本（每行 `代码 名称 价格 涨跌幅` / `币种 $价格 24h涨跌幅`） |
+
+- 服务 UUID `FFF0`；通知按协商 MTU 自动分片，nRF Connect 默认会请求大 MTU
+- 手机保持连接时设备不会进入夜间深睡眠
+- 不需要 BLE 时把 `config.h` 的 `BLE_ENABLE` 改 0，可省约 50KB 内存
+
+### 加密货币页
+
+按 **UP 或 DOWN 键**在 A股页与币市页之间切换（底部圆点指示当前页），
+**OK 键**立即刷新当前页。币市页每行显示：币种符号、美元价（小数位自适应）、
+24h 涨跌幅（红涨绿跌，与 A股页一致）、市值缩写（`$2.31T`）。
+
+数据链路与 A股页同样的"主源 + 备用 + 熔断"结构：
+
+- **主源 CoinGecko** `/api/v3/coins/markets`：按市值降序动态返回，排名变化自动跟随；
+  默认跳过稳定币/包装币（`config.h` 的 `CRYPTO_EXCLUDE`）
+- **备用 OKX** `/api/v5/market/ticker`：固定列表（`CRYPTO_FALLBACK_LIST`）逐个查询，
+  无市值数据（该列显示 `-`）；主源失败后熔断 10 分钟直接走备用
+- 两源都是 HTTPS。**大陆网络下这两个域名可能无法直连**，`config.h` 里
+  `CRYPTO_CG_HOST` / `CRYPTO_OKX_HOST` 可改为可用的镜像域名（OKX 可试 `aws.okx.com`）
+- 刷新间隔 `CRYPTO_REFRESH_MS` 默认 45s（CoinGecko 免费接口有频率限制，勿低于 30s）
+
+### 夜间深睡眠
+
+默认北京时间 **23:30~07:00**（`config.h` 的 `DEEP_SLEEP_START_MIN/END_MIN`，可跨零点）：
+息屏 20 秒后自动进入深睡眠，功耗从几十 mA 降到微安级；RTC 定时器睡到窗口结束自动
+唤醒并恢复运行。窗口内**按任意实体键**随时唤醒（三键分压电路会把 GPIO0 拉到低电平，
+外部上拉常供电，深睡期间有效）。
+
+注意事项：
+
+- 深睡唤醒 = 重新启动，需要重连 WiFi 并抓一轮数据（约 5~10 秒）后画面才有内容
+- 手机 BLE 保持连接时不进入深睡（避免推送中断）；服务器时间未校准成功时也不进入
+  （无法判断当前时刻）
+- RTC 时钟有 ±5% 漂移，提前醒来会自动补睡到窗口结束
+- 不需要该功能把 `DEEP_SLEEP_ENABLE` 改 0
+- 官方仓库注明按键唤醒电路"尚无板级验证"，本项目按分压电路原理推断可行；
+  若实测按键无法唤醒，等定时唤醒或拔插 USB 即可，欢迎反馈
+
+### 三键操作
+
+三键共用 GPIO0 ADC 分压，电压窗口来自官方仓库 `bsp_pins.h`
+（UP 0~150mV / DOWN 150~447mV / OK 447~1900mV，松开约 3300mV）：
+
+| 按键 | 亮屏时 | 息屏时 |
+|---|---|---|
+| UP / DOWN | 切换 A股页 ⇄ 币市页 | 唤醒屏幕（不翻页） |
+| OK | 立即刷新当前页 | 唤醒屏幕（不刷新） |
 
 ### 自定义自选股
 
@@ -154,6 +221,11 @@ pio run -t upload             # 板子 USB 直连
 pio run -t upload             # 板子 USB 直连
 pio run -t monitor            # 查看串口日志（115200）
 ```
+
+> **分区表说明**：为容纳 BLE 协议栈，项目改用官方 `partitions.csv`
+> （factory 3MB，与 folotoy/ai-passport 一致，不触碰 0x700000 的官方 recovery 区）。
+> 从旧版固件（默认 4MB 双 OTA 分区）升级烧录后，NVS 里保存的 WiFi 凭据可能丢失，
+> 重新用串口或 BLE 配一次网即可。
 
 | 环境 | 用途 |
 |---|---|
@@ -308,6 +380,27 @@ core 3.0.7（IDF 5.1.x）在 ESP32-C3 上的 mbedTLS 硬件 AES 对齐 bug，TLS
 与 SPI 补丁无冲突）。注意配置在 `include/User_Setup.h` 和
 `lib/TFT_eSPI/User_Setup.h` **两处**。
 
+### 8. 换官方分区表后无限复位（RTC_SW_SYS_RST 循环）
+
+现象：烧录后串口只反复打印 ROM 启动头（`rst:0x3 ... entry 0x403cc710`），
+约 30ms 一轮，没有任何应用日志。二级 bootloader 的日志走 UART0（GPIO21，
+被背光占用），所以在 USB 口完全看不到失败原因。
+
+根因：`board_build.flash_size = 8MB` **并不会改镜像头里的 flash 尺寸字节**
+（`esp32-c3-devkitm-1` 板定义的 `upload.flash_size=4MB` 才是生效值，镜像头
+第 4 字节为 `0x2?` = 4MB）。bootloader 按 4MB 校验分区表，官方分区表里
+0x700000 起的 recovery 区"越界"→ 分区表整表被拒 → 软复位循环。
+
+解法：`platformio.ini` 同时设置三项（缺一不可）：
+
+```ini
+board_build.flash_size = 8MB
+board_upload.flash_size = 8MB
+board_upload.maximum_size = 8388608
+```
+
+验证：`xxd -l 4 .pio/build/main/bootloader.bin` 第 4 字节应为 `0x3?`（3 = 8MB）。
+
 ## 目录结构
 
 ```
@@ -317,12 +410,18 @@ stockscreen/
 │   ├── config.h                # ★ 用户配置：WiFi、自选股、引脚、刷新频率
 │   ├── User_Setup.h            # TFT_eSPI 配置（ST7789、BGR、INVON、字体宏）
 │   └── stock_font.h            # 中文字库（gen_font.py 生成，勿手改）
+├── partitions.csv              # 官方分区布局（factory 3MB，避开 recovery 区）
 ├── src/
-│   ├── main.cpp                # setup/loop：WiFi、抓取调度、电量采样
-│   ├── stocks.h / stocks.cpp   # 行情抓取与解析（东财/腾讯）、HTTP、时间工具
-│   ├── ui.h / ui.cpp           # 屏幕渲染：状态栏 + 卡片 + 中文绘制
+│   ├── main.cpp                # setup/loop：WiFi、抓取调度、翻页、深睡、电量采样
+│   ├── stocks.h / stocks.cpp   # A股行情抓取与解析（东财/腾讯）、时间工具
+│   ├── crypto.h / crypto.cpp   # 加密货币行情（CoinGecko/OKX，市值前五动态跟踪）
+│   ├── net_http.h / net_http.cpp # HTTP GET / 响应头解析 / chunked 解码 / 日历
+│   ├── ui.h / ui.cpp           # 屏幕渲染：状态栏 + 双页卡片 + 中文绘制
+│   ├── buttons.h / buttons.cpp # 三键 ADC 区分（UP/DOWN/OK）+ 去抖
+│   ├── blecfg.h / blecfg.cpp   # BLE 配网 + 行情推送（NimBLE，FFF0/FFF1/FFF2）
+│   ├── powersave.h / powersave.cpp # 夜间深睡眠（定时 + 按键唤醒）
 │   ├── battery.h / battery.cpp # CW2017 电量计驱动
-│   ├── wificonfig.h / wificonfig.cpp # USB 串口配网：NVS 存储 + 串口命令
+│   ├── wificonfig.h / wificonfig.cpp # 配网命令处理（串口 + BLE 共用）+ NVS 存储
 │   └── test_screen.cpp         # 屏幕诊断固件（env:test_screen）
 ├── lib/
 │   └── TFT_eSPI/               # 本地修改版（C3 兼容补丁，见 README_PATCHES.md）

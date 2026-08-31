@@ -22,3 +22,7 @@ void wifiConfigBegin();
 
 // 轮询串口命令；凭据发生变更时返回 true（调用方应触发重连）
 bool wifiConfigLoop();
+
+// 执行一行配置命令（wifi/wifi-status/wifi-clear/help），回应文本写入 reply。
+// 串口与 BLE 配网共用这一个入口；凭据发生变更时返回 true
+bool wifiConfigHandleCommand(const String& line, String& reply);

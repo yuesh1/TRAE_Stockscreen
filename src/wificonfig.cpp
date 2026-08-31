@@ -10,7 +10,6 @@
 #include "wificonfig.h"
 #include "config.h"
 #include <Preferences.h>
-#include <stdarg.h>
 #include "driver/usb_serial_jtag.h"
 
 static const char* NVS_NS = "wifi";
@@ -28,15 +27,6 @@ static const char* USAGE =
 static void cfgWrite(const char* s) {
   if (!usbSerialReady) return;
   usb_serial_jtag_write_bytes(s, strlen(s), pdMS_TO_TICKS(200));
-}
-
-static void cfgPrintf(const char* fmt, ...) {
-  char buf[128];
-  va_list ap;
-  va_start(ap, fmt);
-  vsnprintf(buf, sizeof(buf), fmt, ap);
-  va_end(ap);
-  cfgWrite(buf);
 }
 
 // 返回读到的字节，无数据返回 -1
@@ -115,45 +105,46 @@ static String trimLine(const String& s) {
   return t;
 }
 
-static void printStatus() {
+static void statusText(String& out) {
   String s, p;
   if (readNvs(s, p)) {
-    cfgPrintf("[WiFi] 当前凭据：NVS 已保存（SSID: %s，密码已隐藏）\r\n", s.c_str());
+    out += "[WiFi] 当前凭据：NVS 已保存（SSID: " + s + "，密码已隐藏）\r\n";
   } else {
-    cfgPrintf("[WiFi] 当前凭据：编译期默认值（SSID: %s）%s\r\n", WIFI_SSID,
-              wifiConfigIsPlaceholder() ? "，未配置！请用 wifi 命令设置" : "");
+    out += "[WiFi] 当前凭据：编译期默认值（SSID: " WIFI_SSID "）";
+    if (wifiConfigIsPlaceholder()) out += "，未配置！请用 wifi 命令设置";
+    out += "\r\n";
   }
 }
 
-// 解析一行命令，凭据变更返回 true
-static bool handleLine(const String& raw) {
+// 执行一行命令（串口与 BLE 共用），回应写入 reply，凭据变更返回 true
+bool wifiConfigHandleCommand(const String& raw, String& reply) {
   String line = trimLine(raw);
   if (line.length() == 0) return false;
   if (line == "help" || line == "?") {
-    cfgWrite(USAGE);
+    reply += USAGE;
   } else if (line == "wifi-status") {
-    printStatus();
+    statusText(reply);
   } else if (line == "wifi-clear") {
     clearNvs();
-    cfgWrite("[WiFi] 已清除 NVS 凭据，将回退编译期默认值\r\n");
+    reply += "[WiFi] 已清除 NVS 凭据，将回退编译期默认值\r\n";
     return true;
   } else if (line.startsWith("wifi ")) {
     String rest = line.substring(5);
     int sp = rest.indexOf(' ');
     if (sp <= 0) {
-      cfgWrite("[WiFi] 格式：wifi <SSID> <密码>（SSID 和密码不要带空格）\r\n");
+      reply += "[WiFi] 格式：wifi <SSID> <密码>（SSID 和密码不要带空格）\r\n";
       return false;
     }
     String ssid = rest.substring(0, sp);
     String pass = rest.substring(sp + 1);
     if (!saveNvs(ssid, pass)) {
-      cfgWrite("[WiFi] NVS 保存失败\r\n");
+      reply += "[WiFi] NVS 保存失败\r\n";
       return false;
     }
-    cfgPrintf("[WiFi] 已保存（SSID: %s，密码已隐藏），正在重连...\r\n", ssid.c_str());
+    reply += "[WiFi] 已保存（SSID: " + ssid + "，密码已隐藏），正在重连...\r\n";
     return true;
   } else {
-    cfgWrite("[WiFi] 未知命令，输入 help 查看帮助\r\n");
+    reply += "[WiFi] 未知命令，输入 help 查看帮助\r\n";
   }
   return false;
 }
@@ -164,7 +155,11 @@ bool wifiConfigLoop() {
   int c;
   while ((c = cfgReadByte()) >= 0) {
     if (c == '\n' || c == '\r') {
-      if (buf.length()) changed = handleLine(buf) || changed;
+      if (buf.length()) {
+        String reply;
+        changed = wifiConfigHandleCommand(buf, reply) || changed;
+        if (reply.length()) cfgWrite(reply.c_str());
+      }
       buf = "";
     } else if (buf.length() < 96) {
       buf += (char)c;
