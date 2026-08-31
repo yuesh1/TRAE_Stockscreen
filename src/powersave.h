@@ -10,6 +10,10 @@
 // 开机时调用：打印唤醒原因（深睡定时/按键/上电复位）
 void powersaveBootReport();
 
+// 本次开机的唤醒原因文本（开机早期的日志常在 USB 重枚举前丢失，
+// 供主循环稍后补打一次）
+const char* powersaveWakeCause();
+
 // epoch（UTC）是否落在深睡窗口内（按北京时间判断）
 bool powersaveInWindow(uint32_t epoch);
 

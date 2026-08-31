@@ -10,18 +10,17 @@
 #include "esp_sleep.h"
 #include "driver/gpio.h"
 
+static const char* sWakeCause = "正常上电/复位启动";
+
+const char* powersaveWakeCause() { return sWakeCause; }
+
 void powersaveBootReport() {
   switch (esp_sleep_get_wakeup_cause()) {
-    case ESP_SLEEP_WAKEUP_TIMER:
-      log_i("[深睡] 定时唤醒（睡眠窗口结束）");
-      break;
-    case ESP_SLEEP_WAKEUP_GPIO:
-      log_i("[深睡] 按键唤醒");
-      break;
-    default:
-      log_i("[深睡] 正常上电/复位启动");
-      break;
+    case ESP_SLEEP_WAKEUP_TIMER: sWakeCause = "定时唤醒（睡眠窗口结束）"; break;
+    case ESP_SLEEP_WAKEUP_GPIO:  sWakeCause = "按键唤醒"; break;
+    default: break;
   }
+  log_i("[深睡] %s", sWakeCause);
   // 上一轮深睡为压住背光启用了 GPIO 保持，启动后先解除才能重新控制
 #if TFT_BL_PIN >= 0
   gpio_hold_dis((gpio_num_t)TFT_BL_PIN);
@@ -66,7 +65,21 @@ void powersaveMaybeSleep(TFT_eSPI& tft, uint32_t epoch, bool screenOn, bool bleC
 
   esp_sleep_enable_timer_wakeup((uint64_t)remainMin * 60ULL * 1000000ULL);
 #if BTN_ADC_PIN >= 0 && BTN_ADC_PIN <= 5   // C3 仅 GPIO0~5 支持深睡 GPIO 唤醒
-  esp_deep_sleep_enable_gpio_wakeup(1ULL << BTN_ADC_PIN, ESP_GPIO_WAKEUP_GPIO_LOW);
+  // 按键脚一直被 analogRead 置于模拟模式，数字输入缓冲是关的（恒读 0），
+  // 直接使能"低电平唤醒"会瞬间触发 → 深睡/唤醒死循环。
+  // 必须先切回数字输入（外部 10k 上拉会把松开态拉到 3.3V）
+  gpio_config_t io = {};
+  io.pin_bit_mask = 1ULL << BTN_ADC_PIN;
+  io.mode = GPIO_MODE_INPUT;               // 上下拉都不使能：板上有外部上拉
+  gpio_config(&io);
+  delay(2);   // 等电平稳定
+  if (gpio_get_level((gpio_num_t)BTN_ADC_PIN) == 1) {
+    esp_deep_sleep_enable_gpio_wakeup(1ULL << BTN_ADC_PIN, ESP_GPIO_WAKEUP_GPIO_LOW);
+  } else {
+    // 仍读到低电平（按键被按住或引脚异常）：只用定时唤醒，防止瞬醒循环
+    log_w("[深睡] 按键脚为低电平，本轮仅定时唤醒");
+    delay(20);
+  }
 #endif
   esp_deep_sleep_start();   // 不返回；唤醒即重启
 #endif

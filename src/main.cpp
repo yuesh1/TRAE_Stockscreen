@@ -214,6 +214,13 @@ void loop() {
   uint32_t now = millis();
   bool wifiOk = WiFi.status() == WL_CONNECTED;
 
+  // 唤醒原因补打一次：开机早期的日志常在 USB 重枚举完成前丢失
+  static bool wakeLogged = false;
+  if (!wakeLogged && now >= 6000) {
+    wakeLogged = true;
+    log_i("[深睡] 本次启动原因：%s", powersaveWakeCause());
+  }
+
   // 三键：按下即算屏幕操作；息屏状态下第一次按键只唤醒不触发动作
   BtnKey click = btnPoll();
   if (btnAnyPressed() || click != BTN_NONE) {
