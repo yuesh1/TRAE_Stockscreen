@@ -9,6 +9,7 @@
 // ============================================================
 #include "wificonfig.h"
 #include "config.h"
+#include "battery.h"
 #include <Preferences.h>
 #include "driver/usb_serial_jtag.h"
 
@@ -20,6 +21,7 @@ static const char* USAGE =
   "  wifi <SSID> <密码>  保存凭据并重连\r\n"
   "  wifi-status         查看凭据来源\r\n"
   "  wifi-clear          清除 NVS 凭据\r\n"
+  "  bat                 电量计（CW2017）诊断\r\n"
   "  help                打印本帮助\r\n";
 
 // ---- 控制台输出 / 输入（USB-Serial/JTAG 驱动）----
@@ -124,6 +126,8 @@ bool wifiConfigHandleCommand(const String& raw, String& reply) {
     reply += USAGE;
   } else if (line == "wifi-status") {
     statusText(reply);
+  } else if (line == "bat") {
+    batteryDiag(reply);
   } else if (line == "wifi-clear") {
     clearNvs();
     reply += "[WiFi] 已清除 NVS 凭据，将回退编译期默认值\r\n";
